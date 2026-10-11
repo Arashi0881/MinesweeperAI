@@ -323,6 +323,28 @@ Acceptance data in `data/ablation_smoke_20261011` is a ten-game beginner smoke,
 not the full planned benchmark. Independent tests enumerate all binary vectors
 for small components and full small boards, comparing solution sets and exact
 mine probabilities without using solver propagation as an oracle. These finite
-checks do not prove correctness for all boards. The existing Word report and its
-main benchmark numbers are unchanged by this implementation; update ablation
-conclusions only after collecting and validating the full intended sample.
+checks do not prove correctness for all boards. The full ablation run is now validated in `data/ablation_full_20261011`: 6900
+game executions, 2300 INFO pairs and 2524 exact matched replay triples. The new
+Word report is `reports/Bao_cao_Minesweeper_AI_cap_nhat_ablation.docx`; all main
+benchmark tables and original images are preserved. See the full-run README
+for effect sizes and multiple-comparison interpretation. The earlier report
+remains available as the input template.
+
+
+## Updating the Word report after full ablation
+
+Validate the completed full sample first. To create a separate updated DOCX,
+install `python-docx` alongside the optional matplotlib report dependency,
+then run:
+
+```bash
+MPLCONFIGDIR=/tmp/minesweeper-matplotlib XDG_CACHE_HOME=/tmp/minesweeper-cache python docs/report/scripts/update_ablation_report.py --template docs/report/reports/Bao_cao_Minesweeper_AI_cap_nhat_thuc_nghiem.docx --data-dir docs/report/data/ablation_full_20261011 --out docs/report/reports/Bao_cao_Minesweeper_AI_cap_nhat_ablation.docx
+```
+
+The updater rejects smoke data, incomplete replay and non-default configurations.
+It creates two PNG/SVG figures, adds ablation setup/results/paired comparisons,
+updates stale limitations and the appendix, and verifies preservation of all
+existing tables and illustrations. The accompanying `.audit.json` records
+source report, output, manifest, summary, script and figure hashes. Output paths
+must be new. Open the document in Word to refresh its table of contents and
+page numbers; pagination is not rendered or verified in this environment.

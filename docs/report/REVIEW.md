@@ -57,11 +57,11 @@ với dữ liệu chính thức.
 
 | Vấn đề | Trạng thái và bước đánh giá phù hợp |
 |---|---|
-| Degree Heuristic, propagation, INFO | Đã triển khai replay cùng frontier và cặp ván baseline/no_info theo Spec_ablation; mới nghiệm thu smoke, chưa chạy mẫu chính 1000/1000/300. Không suy ra đóng góp riêng từ tỉ lệ thắng. |
-| Node, prune, độ sâu, thời gian DFS | Đã thêm DFSStats tùy chọn, thời gian DFS và xác suất tách riêng, reset từng nước. time_ms vẫn là toàn ván; chưa có kết quả ablation đầy đủ. |
+| Degree Heuristic, propagation, INFO | Đã triển khai replay cùng frontier và cặp ván baseline/no_info theo Spec_ablation; đã chạy và xác minh mẫu chính 1000/1000/300, 2524 bộ ba replay và 2300 cặp INFO. Không suy ra đóng góp riêng từ tỉ lệ thắng. |
+| Node, prune, độ sâu, thời gian DFS | Đã thêm DFSStats tùy chọn, thời gian DFS và xác suất tách riêng, reset từng nước. time_ms vẫn là toàn ván; kết quả đầy đủ trong data/ablation_full_20261011. |
 | Brute-force độc lập | Đã có oracle độc lập liệt kê vector nhị phân cho component nhỏ và bố trí toàn cục có tổng số mìn, đối chiếu nghiệm và Fraction. Chưa chứng minh cho mọi bàn hoặc chạy chiến dịch đối chiếu lớn. |
 | Safe Cell Coverage | Đã tính trực tiếp từ CSV, gồm trung bình mọi ván và riêng stalled. Đây là thống kê mô tả, không phải kết luận nhân quả hoặc nghiệm tối ưu. |
-| Chênh lệch biến thể | Ablation INFO đã có exact McNemar theo fingerprint cùng bàn; smoke không đủ cho kết luận chính. Outside có thể đối chiếu theo seed trên cùng bàn bằng McNemar; center/corner hoặc đổi luật click đầu có thể thay đổi bố trí, không gọi là cùng bàn chỉ vì trùng seed. |
+| Chênh lệch biến thể | Ablation INFO đã có exact McNemar theo fingerprint cùng bàn; đã có mẫu đầy đủ; p intermediate=0,039617 trước hiệu chỉnh, không preset nào đạt Bonferroni 0,05/3. Outside có thể đối chiếu theo seed trên cùng bàn bằng McNemar; center/corner hoặc đổi luật click đầu có thể thay đổi bố trí, không gọi là cùng bàn chỉ vì trùng seed. |
 | LV3 | Mặc định chỉ chọn frontier khi có xác suất; không có timeout/cache, DFS lưu toàn bộ nghiệm. include_outside là biến thể đã có, không đổi mặc định. |
 | Thông tin mâu thuẫn | Solver giả định cờ đúng, có thể bỏ ràng buộc bất hợp lệ hoặc fallback; benchmark không chứng minh xử lý được mọi cờ sai. |
 | GUI | Ba kiểm thử cần màn hình vẫn skipped. Cancel bỏ chờ/kết quả, không dừng tính toán worker. Chưa kiểm tra chuột/DPI/hiển thị dài trên nhiều hệ điều hành. |
@@ -74,5 +74,10 @@ minh đúng bằng brute-force hoặc giao diện đã được kiểm tra đầ
 
 Spec mới được lưu tại `Spec_ablation_Minesweeper.md`. Lần này có thay đổi tùy
 chọn trong solver và observer của batch, nhưng giữ nguyên tham số/hành vi mặc
-định. Hướng dẫn và định nghĩa thống kê nằm trong README. Dữ liệu smoke riêng
-không thay thế benchmark chính hoặc tự động cập nhật báo cáo Word.
+định. Hướng dẫn và định nghĩa thống kê nằm trong README. Dữ liệu smoke vẫn tách riêng. Bộ ablation đầy đủ đã xác minh và cập nhật bản
+Word cap_nhat_ablation; các bảng benchmark chính và hình cũ được giữ nguyên.
+
+Xác minh mới: 253 passed, 3 skipped (màn hình); 6900 lượt chạy, 2524 snapshot
+khớp, 0 bị loại/bất khả thi/lỗi thực thi. INFO không có stalled. Node của
+no_degree/no_propagation lần lượt 1,111×/6,209× baseline; thời gian DFS
+1,014×/5,393×. Không suy ra lợi ích INFO phổ quát hoặc tính tương đương.

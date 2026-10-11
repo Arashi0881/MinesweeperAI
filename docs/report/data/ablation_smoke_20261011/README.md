@@ -11,5 +11,6 @@ include_outside=False; statistics enabled for all variants.
 - All phases complete; summarizer validated raw CSV/JSONL and source checksums.
 
 This sample validates execution and output, not heuristic effectiveness.
-The full planned ablation sample (1000/1000/300 games) has not been run.
+The full planned ablation sample was subsequently run and validated in
+`../ablation_full_20261011`; keep this smoke separate.
 The existing report's main benchmark numbers remain unchanged.
