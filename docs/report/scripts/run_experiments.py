@@ -271,13 +271,8 @@ def _record_row(record: GameRecord, experiment: Experiment) -> dict[str, object]
     return row
 
 
-def run(out_dir: Path, suite: str, seed_start: int, games_override: int | None) -> None:
-    if out_dir.exists() and any(out_dir.iterdir()):
-        raise SystemExit(f"output directory is not empty: {out_dir}")
-    experiments = build_experiments(suite, games_override)
-    start = datetime.now().astimezone().isoformat()
-    manifest = _manifest(experiments, start, sys.argv)
-    manifest.update(suite=suite, seed_start=seed_start, games_override=games_override)
+def save_source_provenance(out_dir: Path, manifest: dict[str, object]) -> None:
+    """Preserve runtime sources for either the report or ablation pipeline."""
     # Capture provenance before creating output files. The snapshot also preserves
     # untracked Python files, which git diff alone cannot capture.
     source_paths = sorted(set(ROOT.glob("minesweeper/**/*.py")) | set(ROOT.glob("docs/report/scripts/*.py")))
@@ -293,6 +288,16 @@ def run(out_dir: Path, suite: str, seed_start: int, games_override: int | None) 
     if manifest["git_status"] == "dirty":
         patch = _git(["git", "diff", "HEAD", "--binary"]) or ""
         (out_dir / "working_tree.patch").write_text(patch, encoding="utf-8")
+
+
+def run(out_dir: Path, suite: str, seed_start: int, games_override: int | None) -> None:
+    if out_dir.exists() and any(out_dir.iterdir()):
+        raise SystemExit(f"output directory is not empty: {out_dir}")
+    experiments = build_experiments(suite, games_override)
+    start = datetime.now().astimezone().isoformat()
+    manifest = _manifest(experiments, start, sys.argv)
+    manifest.update(suite=suite, seed_start=seed_start, games_override=games_override)
+    save_source_provenance(out_dir, manifest)
 
     try:
         for index, experiment in enumerate(experiments, start=1):

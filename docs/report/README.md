@@ -203,7 +203,126 @@ complete validated run. `docs/HEURISTICS.md` describes a separate 200-game
 sample and must not be merged into this dataset. Replication compares outcomes,
 moves, guesses and revealed cells, excluding time_ms.
 
-Ablation of Degree Heuristic/propagation/INFO, DFS node/prune/depth statistics,
-independent brute-force validation, and significance tests remain outside this
-spec. Win rates alone establish none of those. Coverage is descriptive and
-changes neither solvers nor gameplay.
+The original reproduction spec does not measure individual heuristic contributions.
+The separate ablation workflow below implements those measurements. Coverage
+remains descriptive.
+
+
+## Ablation: Degree Heuristic, propagation and INFO
+
+Specification: [Spec_ablation_Minesweeper.md](Spec_ablation_Minesweeper.md).
+Run from the repository root after `uv sync --locked --extra report`:
+
+```bash
+# Acceptance smoke: beginner, seeds 0–9, one warmup + five measured replays.
+uv run python docs/report/scripts/run_ablation.py --presets beginner --games 10 --out-dir docs/report/data/ablation_smoke_new
+uv run python docs/report/scripts/summarize_ablation.py --data-dir docs/report/data/ablation_smoke_new
+
+# Full planned sample: beginner 1000, intermediate 1000, expert 300.
+uv run python docs/report/scripts/run_ablation.py --out-dir docs/report/data/ablation_full_new
+uv run python docs/report/scripts/summarize_ablation.py --data-dir docs/report/data/ablation_full_new
+
+# Alternatively, separate phases using exactly the same source and saved settings.
+uv run python docs/report/scripts/run_ablation.py --phase collect --out-dir docs/report/data/ablation_phased_new
+uv run python docs/report/scripts/run_ablation.py --phase replay --out-dir docs/report/data/ablation_phased_new
+uv run python docs/report/scripts/run_ablation.py --phase games --out-dir docs/report/data/ablation_phased_new
+uv run python docs/report/scripts/summarize_ablation.py --data-dir docs/report/data/ablation_phased_new
+```
+
+Initial options include `--seed-start`, `--repetitions` (default 5),
+`--shuffle-seed` (default 0), `--opening-strategy`, `--include-outside`,
+`--first-click` and `--flood-fill`. Defaults remain center, outside=False,
+OPENING, BFS and chord=True. Continuations reject option overrides, modified
+source, or an already-started phase. Failed/interrupted phases require a fresh
+run directory; they are never overwritten or silently resumed. DFS has no
+new timeout, approximation or cache, so difficult frontiers can take a long time.
+
+`DfsSolver` accepts `variable_order="degree"`, `use_propagation=True`,
+`guess_tiebreak="info"` and `collect_stats=False`. The latter disables counters
+and timers in normal play. `last_stats` and `component_stats` reset on every
+`next_move`, including moves handled by LV1/LV2. Ablation runners explicitly
+turn statistics on for all variants.
+
+| Variant | Variable order | Forced propagation | Guess tie break |
+|---|---|---|---|
+| baseline | Degree Heuristic | enabled | original constraint count (INFO) |
+| no_degree | coordinate | enabled | INFO |
+| no_propagation | Degree Heuristic | disabled | INFO |
+| no_info | Degree Heuristic | enabled | coordinate |
+
+Disabling propagation retains feasibility pruning at every DFS node. Removing
+INFO affects only equal-probability guesses; certain safe cells and flags keep
+their existing selection. Default game outcomes are checked against the first
+ten beginner records of the historical benchmark, excluding elapsed time.
+
+Collection runs baseline games and observes only states where LV1/LV2 are
+stuck, before DFS. `frontiers.jsonl` contains observable PlayerView fields,
+original constraints (including duplicates), configuration, canonical input
+SHA-256, and seed/step occurrences. It contains no hidden mine layout.
+Identical inputs are deduplicated; each unique snapshot contributes once to
+replay summaries. Occurrences are preserved without acting as weights.
+`collection_games.csv` is diagnostic and is not merged into the paired INFO sample.
+
+Replay solves exactly the same snapshots using baseline, no_degree and
+no_propagation. Exact component solution sets and global Fraction probabilities
+must agree in every warmup and measured repetition. A mismatch stops the run
+and blocks summarization. Component/global infeasibility is recorded separately
+and excluded from performance ratios. Each snapshot has one warmup per variant
+and five measured repetitions by default, with seeded shuffled variant order
+and sequential execution. CSV counters represent one search; median DFS and
+probability times represent measured repetitions, not their sum.
+
+`ablation_games.csv` contains complete GameRecord fields, settings, aggregated
+stats and initial-board fingerprints for baseline/no_info games. The fingerprint
+is computed by the experiment harness after the first move and is never supplied
+to inference. Pairing requires the same configuration, seed and fingerprint;
+matching seeds alone is insufficient. `time_ms` is whole-game elapsed time;
+collection callbacks have additional overhead and their timing is not the INFO
+comparison. Execution errors are recorded and rejected by the summarizer.
+
+| DFSStats field | Definition |
+|---|---|
+| nodes_visited | every entered node, including roots, rejected nodes and solutions |
+| branch_points | nodes selecting a variable and exploring both 0/1 children |
+| pruned_nodes | infeasible nodes, counted once per node |
+| forced_assignments | new assignments from propagation, excluding branching |
+| constraint_checks | constraints scanned by propagation/feasibility checking |
+| propagation_passes | passes including the final unchanged pass; zero when disabled |
+| max_depth | branching depth, root zero; maximum across components/moves |
+| solutions_count | enumerated component solutions, summed across components |
+| dfs_time_ms | component DFS elapsed time from perf_counter_ns, summed |
+| probability_time_ms | separate global probability calculation time |
+| components_count | number of components solved |
+| largest_component_variables | maximum component size |
+
+Move/game aggregation sums counters and times and takes maxima for depth and
+component size. Timing DFS excludes the subsequent probability calculation.
+Whole-game node counts are diagnostic: INFO changes later trajectories, so
+those counts do not isolate the effect of Degree Heuristic or propagation.
+
+Outputs include `ablation_frontiers.csv`, `ablation_games.csv`,
+`ablation_summary.csv`, `ablation_tables.md` and `manifest.json`. The manifest
+records planned samples, phases, replay status, variant settings, repetition
+counts, commands, source hashes/snapshot/patch and raw-data checksums. The
+summarizer verifies the matrix, paired boards, counters, provenance and complete
+matched triples before writing tables. For an interrupted replay only,
+`--allow-incomplete-replay` explicitly excludes entire incomplete triples;
+collection and paired games must still be complete, and recorded mismatches
+or failures are never accepted.
+
+Replay tables report matched/feasible/infeasible/excluded snapshot counts,
+mean/median/P95 nodes, mean pruning/forced assignments, median/P95 DFS time and
+ratios of total nodes/time on the same feasible snapshots. INFO tables include
+wins/losses/stalls, Wilson 95% win-rate intervals, moves/guesses, paired discordant
+counts b (baseline-only win) and c (no_info-only win), the win-rate difference
+(no_info minus baseline, percentage points), and exact two-sided McNemar p.
+This p-value is unadjusted for multiple comparisons. Overlapping Wilson intervals
+and non-significance do not establish equivalence.
+
+Acceptance data in `data/ablation_smoke_20261011` is a ten-game beginner smoke,
+not the full planned benchmark. Independent tests enumerate all binary vectors
+for small components and full small boards, comparing solution sets and exact
+mine probabilities without using solver propagation as an oracle. These finite
+checks do not prove correctness for all boards. The existing Word report and its
+main benchmark numbers are unchanged by this implementation; update ablation
+conclusions only after collecting and validating the full intended sample.

@@ -45,6 +45,7 @@ def run_game(
     solver_cls: type[Solver],
     *,
     solver_factory: Callable[[random.Random], Solver] | None = None,
+    move_observer: Callable[[Game, Solver, int], None] | None = None,
 ) -> GameRecord:
     if config.seed is None:
         raise ValueError("run_game needs config.seed for reproducibility")
@@ -78,6 +79,8 @@ def run_game(
             break
         moves += 1
         guesses += not move.certain
+        if move_observer is not None:
+            move_observer(game, solver, moves)
     elapsed_ms = (time.perf_counter() - start) * 1000
     if result is None:
         result = "won" if game.status is Status.WON else "lost"
