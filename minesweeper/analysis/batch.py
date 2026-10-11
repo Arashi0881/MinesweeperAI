@@ -4,8 +4,9 @@ from __future__ import annotations
 import csv
 import logging
 import math
+import random
 import time
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import asdict, dataclass, fields, replace
 from typing import TextIO
 
@@ -39,11 +40,20 @@ class GameRecord:
 CSV_FIELDS = [f.name for f in fields(GameRecord)]
 
 
-def run_game(config: GameConfig, solver_cls: type[Solver]) -> GameRecord:
+def run_game(
+    config: GameConfig,
+    solver_cls: type[Solver],
+    *,
+    solver_factory: Callable[[random.Random], Solver] | None = None,
+) -> GameRecord:
     if config.seed is None:
         raise ValueError("run_game needs config.seed for reproducibility")
     game = Game(config)
-    solver = solver_cls(solver_rng(config.seed))
+    solver = (
+        solver_factory(solver_rng(config.seed))
+        if solver_factory is not None
+        else solver_cls(solver_rng(config.seed))
+    )
     limit = config.rows * config.cols * 2
     moves = guesses = 0
     result = None

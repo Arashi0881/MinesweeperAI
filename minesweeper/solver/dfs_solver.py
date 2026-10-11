@@ -25,9 +25,16 @@ class DfsSolver:
 
     name = "lv3"
 
-    def __init__(self, rng: random.Random) -> None:
+    def __init__(
+        self,
+        rng: random.Random,
+        *,
+        opening_strategy: str = "center",
+        include_outside: bool = False,
+    ) -> None:
         self.last_level = 3
-        self._lv2 = ConstraintSolver(rng)
+        self._lv2 = ConstraintSolver(rng, opening_strategy=opening_strategy)
+        self._include_outside = include_outside
 
     def next_move(self, view: PlayerView) -> Move:
         try:
@@ -55,7 +62,7 @@ class DfsSolver:
             component_solutions,
             outside_frontier,
             mines_left,
-            include_outside=False,
+            include_outside=self._include_outside,
         )
         if not probabilities:
             hidden = view.hidden_cells()
