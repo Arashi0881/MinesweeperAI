@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import os
 import platform
@@ -10,6 +11,7 @@ import random
 import subprocess
 import sys
 import time
+import zipfile
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
@@ -43,6 +45,7 @@ class Experiment:
     opening_strategy: str
     include_outside: bool
     games: int
+    group_games: dict[str, int] = field(default_factory=dict)
     csv_path: str = ""
     completed_games: int = 0
     status: str = "pending"
@@ -53,6 +56,7 @@ class Experiment:
         return {
             "experiment_id": self.experiment_id,
             "groups": self.groups,
+            "group_games": self.group_games,
             "solver": self.solver,
             "rows": self.config.rows,
             "cols": self.config.cols,
@@ -157,10 +161,13 @@ def build_experiments(suite: str, games_override: int | None) -> list[Experiment
                 opening_strategy=opening_strategy,
                 include_outside=include_outside,
                 games=games_override if games_override is not None else games,
+                group_games={group: games_override if games_override is not None else games},
             )
             experiments[key] = experiment
         elif group not in experiment.groups:
             experiment.groups.append(group)
+            experiment.group_games[group] = games_override if games_override is not None else games
+            experiment.games = max(experiment.group_games.values())
 
     groups = {suite} if suite != "all" else {
         "main", "first-click", "density", "flood-fill", "corner", "outside"
@@ -235,7 +242,7 @@ def _environment() -> dict[str, object]:
 def _manifest(experiments: list[Experiment], start: str, command: list[str]) -> dict[str, object]:
     status = _git(["git", "status", "--porcelain"])
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "git_commit": _git(["git", "rev-parse", "HEAD"]),
         "git_status": "clean" if not status else "dirty",
         "git_status_porcelain": status,
@@ -249,7 +256,9 @@ def _manifest(experiments: list[Experiment], start: str, command: list[str]) -> 
 
 
 def _write_manifest(path: Path, manifest: dict[str, object]) -> None:
-    path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    temporary = path.with_suffix(".json.tmp")
+    temporary.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    temporary.replace(path)
 
 
 def _record_row(record: GameRecord, experiment: Experiment) -> dict[str, object]:
@@ -265,10 +274,21 @@ def _record_row(record: GameRecord, experiment: Experiment) -> dict[str, object]
 def run(out_dir: Path, suite: str, seed_start: int, games_override: int | None) -> None:
     if out_dir.exists() and any(out_dir.iterdir()):
         raise SystemExit(f"output directory is not empty: {out_dir}")
-    out_dir.mkdir(parents=True, exist_ok=True)
     experiments = build_experiments(suite, games_override)
     start = datetime.now().astimezone().isoformat()
     manifest = _manifest(experiments, start, sys.argv)
+    manifest.update(suite=suite, seed_start=seed_start, games_override=games_override)
+    # Capture provenance before creating output files. The snapshot also preserves
+    # untracked Python files, which git diff alone cannot capture.
+    source_paths = sorted(set(ROOT.glob("minesweeper/**/*.py")) | set(ROOT.glob("docs/report/scripts/*.py")))
+    manifest["source_sha256"] = {
+        str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in source_paths
+    }
+    out_dir.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(out_dir / "source_snapshot.zip", "w", zipfile.ZIP_DEFLATED) as archive:
+        for path in source_paths:
+            archive.write(path, str(path.relative_to(ROOT)))
     _write_manifest(out_dir / "manifest.json", manifest)
     if manifest["git_status"] == "dirty":
         patch = _git(["git", "diff", "HEAD", "--binary"]) or ""
@@ -283,6 +303,9 @@ def run(out_dir: Path, suite: str, seed_start: int, games_override: int | None) 
             experiment.status = "running"
             experiment.seed_start = seed_start
             experiment.seed_end = seed_start + experiment.games - 1
+            print(f"[{index}/{len(experiments)}] starting {experiment.experiment_id}: {experiment.games} games", flush=True)
+            manifest["experiments"] = [item.manifest_config() for item in experiments]
+            _write_manifest(out_dir / "manifest.json", manifest)
             csv_path = out_dir / experiment.csv_path
             with csv_path.open("x", newline="", encoding="utf-8") as handle:
                 writer = csv.DictWriter(handle, fieldnames=CSV_FIELDS + list(EXPERIMENT_FIELDS))
@@ -302,6 +325,8 @@ def run(out_dir: Path, suite: str, seed_start: int, games_override: int | None) 
             manifest["experiments"] = [
                 item.manifest_config() for item in experiments
             ]
+            checksums = manifest.setdefault("csv_sha256", {})
+            checksums[experiment.experiment_id] = hashlib.sha256(csv_path.read_bytes()).hexdigest()
             _write_manifest(out_dir / "manifest.json", manifest)
     finally:
         manifest["ended_at"] = datetime.now().astimezone().isoformat()

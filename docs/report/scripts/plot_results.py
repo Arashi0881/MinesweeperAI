@@ -13,7 +13,11 @@ if str(ROOT) not in sys.path:
 
 
 def _read_summary(data_dir: Path) -> list[dict[str, str]]:
-    path = data_dir / "summary.csv"
+    # Group views preserve the density group's 500-seed prefix of a shared
+    # 1,000-game baseline; all values still come from validated raw CSVs.
+    path = data_dir / "group_summary.csv"
+    if not path.exists():
+        path = data_dir / "summary.csv"
     if not path.exists():
         raise ValueError(f"missing summary: {path}; run summarize_results.py first")
     with path.open(newline="", encoding="utf-8") as handle:
@@ -29,25 +33,30 @@ def plot_solver(rows: list[dict[str, str]], output: Path) -> bool:
     main = [row for row in rows if "main" in row["groups"]]
     if not main:
         return False
-    import matplotlib.pyplot as plt
-
-    presets = sorted({f"{row['rows']}x{row['cols']}" for row in main})
-    solvers = sorted({row["solver"] for row in main})
+    dimensions = sorted({(int(row['rows']), int(row['cols'])) for row in main})
+    presets = [f"{r}x{c}" for r, c in dimensions]
+    solvers = ["random", "lv1", "lv2", "lv3"]
     values = defaultdict(dict)
     intervals = defaultdict(dict)
     for row in main:
         preset = f"{row['rows']}x{row['cols']}"
+        if row["solver"] in values[preset]:
+            raise ValueError(f"multiple main variants for {preset}/{row['solver']}")
         values[preset][row["solver"]] = float(row["win_rate"]) * 100
         intervals[preset][row["solver"]] = (
-            float(row["win_rate"]) * 100 - float(row["ci_low"]) * 100,
-            float(row["ci_high"]) * 100 - float(row["win_rate"]) * 100,
+            max(0.0, float(row["win_rate"]) * 100 - float(row["ci_low"]) * 100),
+            max(0.0, float(row["ci_high"]) * 100 - float(row["win_rate"]) * 100),
         )
+    missing = [(preset, solver) for preset in presets for solver in solvers if solver not in values[preset]]
+    if missing or len(main) != 16:
+        raise ValueError(f"incomplete main group; missing solver/preset data: {missing}")
+    import matplotlib.pyplot as plt
     figure, axis = plt.subplots(figsize=(10, 6))
     width = 0.8 / len(solvers)
     positions = list(range(len(presets)))
     for index, solver in enumerate(solvers):
-        heights = [values[preset].get(solver, 0) for preset in presets]
-        errors = [intervals[preset].get(solver, (0, 0)) for preset in presets]
+        heights = [values[preset][solver] for preset in presets]
+        errors = [intervals[preset][solver] for preset in presets]
         axis.bar(
             [position + index * width for position in positions],
             heights,
@@ -55,8 +64,11 @@ def plot_solver(rows: list[dict[str, str]], output: Path) -> bool:
             label=solver,
             yerr=list(zip(*errors)) if errors else None,
             capsize=3,
+            hatch=["//", "\\\\", "..", "xx"][index],
         )
-    axis.set_title("Win rate by solver and preset")
+    sample_sizes = {f"{row['rows']}x{row['cols']}": row['games'] for row in main}
+    sizes = ", ".join(f"{preset}: n={sample_sizes[preset]}" for preset in presets)
+    axis.set_title("Win rate by solver — OPENING, chord on, BFS\n" + sizes, fontsize=11)
     axis.set_xlabel("Preset dimensions")
     axis.set_ylabel("Win rate (%)")
     axis.set_ylim(0, 100)
@@ -75,6 +87,8 @@ def plot_density(rows: list[dict[str, str]], output: Path) -> bool:
     ]
     if not density:
         return False
+    if len(density) != 20 or {int(row['mines']) for row in density} != set(range(5, 25)):
+        raise ValueError("incomplete density group: require 5–24 mines")
     import matplotlib.pyplot as plt
 
     density.sort(key=lambda row: float(row["density"]))
@@ -85,7 +99,8 @@ def plot_density(rows: list[dict[str, str]], output: Path) -> bool:
     figure, axis = plt.subplots(figsize=(9, 6))
     axis.plot(x, y, marker="o", label="LV3")
     axis.fill_between(x, low, high, alpha=0.2, label="95% Wilson CI")
-    axis.set_title("LV3 win rate by actual mine density")
+    sizes = ", ".join(sorted({row['games'] for row in density}))
+    axis.set_title(f"LV3 9×9 — OPENING, center, BFS, outside=False\nn={sizes} per point")
     axis.set_xlabel("Mine density (%)")
     axis.set_ylabel("Win rate (%)")
     axis.set_ylim(0, 100)
@@ -107,8 +122,12 @@ def main(argv: list[str] | None = None) -> int:
         produced = []
         if plot_solver(rows, output):
             produced.append("win_rate_by_solver")
+        else:
+            print("No main group: win_rate_by_solver not produced.")
         if plot_density(rows, output):
             produced.append("win_rate_by_density")
+        else:
+            print("No density group: win_rate_by_density not produced.")
         if not produced:
             raise ValueError("no complete data groups available for plotting")
     except (OSError, ValueError, ImportError) as exc:
